@@ -3,7 +3,8 @@ CONFIG_TARGET_qualcommax=y
 CONFIG_TARGET_qualcommax_ipq807x=y
 CONFIG_TARGET_MULTI_PROFILE=y
 CONFIG_TARGET_PER_DEVICE_ROOTFS=y
-#设备列表
+
+#设备列表（只选 Redmi AX6）
 CONFIG_TARGET_DEVICE_qualcommax_ipq807x_DEVICE_aliyun_ap8220=n
 CONFIG_TARGET_DEVICE_qualcommax_ipq807x_DEVICE_cmcc_rm2-6=n
 CONFIG_TARGET_DEVICE_qualcommax_ipq807x_DEVICE_redmi_ax6-stock=y
@@ -12,7 +13,7 @@ CONFIG_TARGET_DEVICE_qualcommax_ipq807x_DEVICE_xiaomi_ax3600-stock=n
 CONFIG_TARGET_DEVICE_qualcommax_ipq807x_DEVICE_xiaomi_ax3600=n
 CONFIG_TARGET_DEVICE_qualcommax_ipq807x_DEVICE_xiaomi_ax9000=n
 
-#内核配置
+#内核配置（平台相关）
 CONFIG_KERNEL_ARM_PMU=y
 CONFIG_KERNEL_CFQ_GROUP_IOSCHED=y
 CONFIG_KERNEL_CGROUP_DEVICE=y
@@ -27,7 +28,7 @@ CONFIG_KERNEL_NET_CLS_CGROUP=y
 CONFIG_KERNEL_PERF_EVENTS=y
 # CONFIG_KERNEL_PREEMPT_RCU is not set
 
-#NSS配置
+#NSS 配置（Feed 与内存，型号相关）
 CONFIG_FEED_nss_packages=y
 CONFIG_FEED_sqm_scripts_nss=y
 CONFIG_IPQ_MEM_PROFILE_1024=n
