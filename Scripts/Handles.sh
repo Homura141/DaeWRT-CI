@@ -81,3 +81,61 @@ if [ -f "$RUST_FILE" ]; then
 		echo "rust fix failed; continuing!"
 	fi
 fi
+
+# ============================================================
+# daed 所需的内核 eBPF/BTF 选项 + hostapd 编译错误修复
+# ============================================================
+echo ">>> Applying daed kernel options and hostapd fix..."
+SOURCE_DIR="$GITHUB_WORKSPACE/$WRT_DIR"
+if [ -d "$SOURCE_DIR" ]; then
+    (
+        cd "$SOURCE_DIR" || exit 1
+
+        # 1. 开启 eBPF/BTF 内核选项（dae 运行前提）
+        TARGET_CONFIG=$(find target/linux/qualcommax -maxdepth 1 -name "config-*" | head -1)
+        if [ -n "$TARGET_CONFIG" ]; then
+            scripts/config --file "$TARGET_CONFIG" \
+                --enable BPF_SYSCALL \
+                --enable BPF_JIT \
+                --enable DEBUG_INFO_BTF \
+                --enable BPF_EVENTS \
+                --enable CGROUP_BPF \
+                --enable NET_CLS_BPF \
+                --enable NET_SCH_INGRESS \
+                --enable KALLSYMS \
+                --enable KALLSYMS_ALL \
+                --enable TCP_CONG_BBR \
+                --enable NET_SCH_FQ
+            echo "eBPF/BTF options enabled in $TARGET_CONFIG"
+        else
+            echo "WARNING: qualcommax target config not found"
+        fi
+
+        # 2. 修复 hostapd he_mu_edca 编译错误（注释掉报错行）
+        HOSTAPD_SRC="package/network/services/hostapd/src/ap/hostapd.c"
+        if [ -f "$HOSTAPD_SRC" ]; then
+            sed -i 's/hapd->iface->conf->he_mu_edca.he_qos_info &= 0xfff0;/\/\* & \*\//' "$HOSTAPD_SRC"
+            echo "hostapd.c patched"
+        else
+            echo "WARNING: hostapd.c not found at $HOSTAPD_SRC"
+        fi
+
+        # 3. 替换为高功率 BDF（Redmi AX6，来自 QSDK 12.5）
+        echo ">>> Replacing Redmi AX6 board-2.bin with high-power version..."
+        BDF_SRC="$GITHUB_WORKSPACE/files/board-redmi_ax6.ipq8074"
+        BDF_DEST=$(find "$SOURCE_DIR/package/firmware" -name "board-redmi_ax6.ipq8074" 2>/dev/null | head -n 1)
+        if [ -f "$BDF_SRC" ] && [ -n "$BDF_DEST" ]; then
+            echo "Source: $BDF_SRC"
+            echo "Target: $BDF_DEST"
+            cp "$BDF_DEST" "${BDF_DEST}.bak"
+            cp "$BDF_SRC" "$BDF_DEST"
+            echo "board-2.bin replaced successfully"
+        else
+            echo "WARNING: BDF source or target not found"
+            echo "  BDF_SRC=$BDF_SRC"
+            echo "  BDF_DEST=$BDF_DEST"
+        fi
+    )
+else
+    echo "WARNING: source directory not found at $SOURCE_DIR"
+fi
