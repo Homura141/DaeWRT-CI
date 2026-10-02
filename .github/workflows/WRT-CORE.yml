@@ -194,9 +194,9 @@ jobs:
           make download -j$(nproc)
 
       # ============================================================
-      # 关键步骤：在编译前覆盖所有 BDF 文件 + 修改 PKG_HASH
+      # 关键步骤：修改 ipq-wifi 的 Makefile，让它安装我们的高功率 BDF
       # ============================================================
-      - name: Override BDF Before Compile
+      - name: Override BDF in ipq-wifi Makefile
         if: env.WRT_TEST != 'true'
         run: |
           BDF_SRC="$GITHUB_WORKSPACE/files/board-2.bin"
@@ -210,63 +210,29 @@ jobs:
           echo "Using BDF source: $BDF_SRC"
           md5sum "$BDF_SRC"
 
-          # 1. 覆盖源码树里的 BDF 源文件
-          find ./wrt/package/firmware ./wrt/feeds -type f \( -name "board-2.bin" -o -name "board-redmi_ax6.ipq8074" \) 2>/dev/null | while read f; do
-            cp "$BDF_SRC" "$f"
-            echo "  Replaced source: $f"
-          done
-
-          # 2. 替换 dl 包里的 BDF
-          cd ./wrt/dl/ || exit 0
-          for f in ath11k-firmware-*.tar.zst ipq-wifi-*.tar.zst; do
-            [ -f "$f" ] || continue
-            echo "Processing: $f"
-
-            TMPDIR=$(mktemp -d)
-            if tar --zstd -xf "$f" -C "$TMPDIR" 2>/dev/null || tar -I zstd -xf "$f" -C "$TMPDIR" 2>/dev/null; then
-              find "$TMPDIR" -type f \( -name "board-2.bin" -o -name "board-redmi_ax6.ipq8074" -o -name "bdwlan*.bin" \) | while read b; do
-                cp "$BDF_SRC" "$b"
-                echo "  Replaced: $b"
-              done
-              tar --zstd -cf "$f" -C "$TMPDIR" . 2>/dev/null || tar -I zstd -cf "$f" -C "$TMPDIR" .
-              echo "  Repacked: $f"
-            else
-              echo "  WARNING: failed to extract $f"
-            fi
-            rm -rf "$TMPDIR"
-          done
-          cd "$GITHUB_WORKSPACE" || exit 0
-
-          # 3. 删除 build_dir 里旧的解压目录
-          echo ">>> Removing old build_dir..."
-          find ./wrt/build_dir -maxdepth 3 -type d \( -name "ath11k-firmware-*" -o -name "ipq-wifi-*" \) 2>/dev/null | while read d; do
-            rm -rf "$d"
-            echo "  Removed: $d"
-          done
-
-          # 4. 兜底覆盖 build_dir
-          find ./wrt/build_dir -type f \( -name "board-2.bin" -o -name "board-redmi_ax6.ipq8074" -o -name "bdwlan*.bin" \) 2>/dev/null | while read f; do
-            cp "$BDF_SRC" "$f"
-            echo "  Replaced build_dir: $f"
-          done
-
-          # 5. 把 ath11k-firmware 和 ipq-wifi 的 PKG_HASH 改成 skip
-          echo ">>> Setting PKG_HASH=skip..."
           WRT_ROOT="$GITHUB_WORKSPACE/wrt"
-          for mk in \
-              "$WRT_ROOT/package/firmware/ath11k-firmware/Makefile" \
-              "$WRT_ROOT/package/firmware/ipq-wifi/Makefile"; do
-              if [ -f "$mk" ]; then
-                  if grep -q "^PKG_HASH" "$mk"; then
-                      sed -i 's/^PKG_HASH:=.*/PKG_HASH:=skip/' "$mk"
-                      echo "  Modified PKG_HASH in $mk"
-                  else
-                      echo "  WARNING: no PKG_HASH in $mk"
-                  fi
-              else
-                  echo "  WARNING: Makefile not found: $mk"
-              fi
-          done
+          IPQ_WIFI_MK="$WRT_ROOT/package/firmware/ipq-wifi/Makefile"
+          ATH11K_MK="$WRT_ROOT/package/firmware/ath11k-firmware/Makefile"
+
+          # 1. 跳过 tar 快照校验，防止重新下载覆盖
+          [ -f "$IPQ_WIFI_MK" ] && sed -i 's/^PKG_MIRROR_HASH:=.*/PKG_MIRROR_HASH:=skip/' "$IPQ_WIFI_MK"
+          [ -f "$ATH11K_MK" ] && sed -i 's/^PKG_MIRROR_HASH:=.*/PKG_MIRROR_HASH:=skip/' "$ATH11K_MK"
+
+          # 2. 在 ipq-wifi Makefile 末尾追加自定义 install-overlay，
+          #    覆盖原有的定义，直接从 files/board-2.bin 安装
+          if [ -f "$IPQ_WIFI_MK" ]; then
+            cat >> "$IPQ_WIFI_MK" << 'MAKEEOF'
+
+# === 高功率 BDF 覆盖（由 WRT-CORE.yml 追加） ===
+define Package/ipq-wifi-redmi_ax6/install-overlay
+	$(INSTALL_DIR) $(1)/lib/firmware/ath11k/IPQ8074/hw2.0/
+	$(INSTALL_DATA) $(TOPDIR)/../files/board-2.bin $(1)/lib/firmware/ath11k/IPQ8074/hw2.0/board-2.bin
+endef
+MAKEEOF
+            echo "Appended install-overlay override to ipq-wifi Makefile"
+          else
+            echo "WARNING: $IPQ_WIFI_MK not found"
+          fi
 
           echo "Override done"
 
