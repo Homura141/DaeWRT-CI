@@ -62,7 +62,6 @@ FEEDS_PACKAGES="$PKG_PATH/../feeds/packages"
 TS_FILE="$(find "$FEEDS_PACKAGES" -maxdepth 3 -type f -wholename '*/tailscale/Makefile' -print -quit 2>/dev/null)"
 if [ -f "$TS_FILE" ]; then
 	echo " "
-
 	if sed -i '/\/files/d' "$TS_FILE"; then
 		echo "tailscale has been fixed!"
 	else
@@ -74,7 +73,6 @@ fi
 RUST_FILE="$(find "$FEEDS_PACKAGES" -maxdepth 3 -type f -wholename '*/rust/Makefile' -print -quit 2>/dev/null)"
 if [ -f "$RUST_FILE" ]; then
 	echo " "
-
 	if sed -i 's/ci-llvm=true/ci-llvm=false/g' "$RUST_FILE"; then
 		echo "rust has been fixed!"
 	else
@@ -130,44 +128,14 @@ fi
 echo ">>> Fixing apk package download..."
 APK_MK="$WRT_ROOT/package/system/apk/Makefile"
 if [ -f "$APK_MK" ]; then
-    # 改成 GitHub 镜像
     sed -i 's|https://gitlab.alpinelinux.org/alpine/apk-tools.git|https://github.com/alpinelinux/apk-tools.git|' "$APK_MK"
-    # 关闭哈希校验，防止因 hash 不一致反复重下
     sed -i 's/^PKG_HASH:=.*/PKG_HASH:=skip/' "$APK_MK"
-    # 如果 Makefile 里有 PKG_SOURCE_URL，改成 GitHub
     if grep -q "^PKG_SOURCE_URL" "$APK_MK"; then
         sed -i 's|^PKG_SOURCE_URL:=.*|PKG_SOURCE_URL:=https://github.com/alpinelinux/apk-tools.git|' "$APK_MK"
     fi
     echo "apk Makefile patched: GitLab -> GitHub, PKG_HASH=skip"
 else
     echo "WARNING: apk Makefile not found at $APK_MK"
-fi
-
-# ============================================================
-# 手动压缩 luci-app-aurora-config 的 JS
-# ============================================================
-echo ">>> Compressing luci-app-aurora-config JS..."
-
-AURORA_DIR="$WRT_ROOT/package/luci-app-aurora-config"
-
-if [ -d "$AURORA_DIR" ]; then
-    echo "Aurora dir: $AURORA_DIR"
-    # 安装 terser
-    npm install -g terser 2>/dev/null || true
-
-    # 找到所有 JS 文件并压缩
-    find "$AURORA_DIR" -type f -name "*.js" | while read js; do
-        cp "$js" "$js.bak"
-        if terser "$js" -o "$js" -c -m --ecma 2020 2>/dev/null; then
-            echo "  Compressed: $js"
-        else
-            echo "  WARNING: failed to compress $js, restoring"
-            mv "$js.bak" "$js"
-        fi
-        rm -f "$js.bak"
-    done
-else
-    echo "WARNING: luci-app-aurora-config not found at $AURORA_DIR"
 fi
 
 echo ">>> Handles.sh done"
