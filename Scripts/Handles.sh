@@ -138,4 +138,16 @@ else
     echo "WARNING: apk Makefile not found at $APK_MK"
 fi
 
+# ============================================================
+# 强制禁用 daed，只保留 dae
+# ============================================================
+echo ">>> Disabling luci-app-daed (only keep dae)..."
+CONFIG_FILE="$GITHUB_WORKSPACE/$WRT_DIR/.config"
+if [ -f "$CONFIG_FILE" ]; then
+    sed -i 's/^CONFIG_PACKAGE_luci-app-daed=y/CONFIG_PACKAGE_luci-app-daed=n/' "$CONFIG_FILE"
+    echo "  luci-app-daed disabled"
+else
+    echo "  WARNING: .config not found"
+fi
+
 echo ">>> Handles.sh done"
