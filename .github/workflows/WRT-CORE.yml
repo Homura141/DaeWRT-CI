@@ -109,10 +109,6 @@ jobs:
           else
             echo "GO_INSTALLED=false" >> "$GITHUB_ENV"
           fi
-#          sudo chown $USER:$GROUPS $GITHUB_WORKSPACE
-#          sudo mkdir -p /mnt/build_wrt
-#          sudo chown $USER:$USER /mnt/build_wrt
-#          sudo ln -s /mnt/build_wrt $GITHUB_WORKSPACE/wrt
 
       - name: Setup Go
         if: env.GO_INSTALLED != 'true'
@@ -163,9 +159,7 @@ jobs:
             find "./wrt/staging_dir" -type d -name "stamp" -not -path "*target*" | while read -r dir; do
                 find "$dir" -type f -exec touch {} +
             done
-          fi            
-
-
+          fi
 
       - name: Update Feeds
         run: |
@@ -199,6 +193,73 @@ jobs:
 
           make download -j$(nproc)
 
+      # ============================================================
+      # 关键步骤：在编译前覆盖所有 BDF 文件（源码树 + dl 下载目录）
+      # ============================================================
+      - name: Override BDF Before Compile
+        if: env.WRT_TEST != 'true'
+        run: |
+          BDF_SRC="$GITHUB_WORKSPACE/files/board-2.bin"
+          [ -f "$BDF_SRC" ] || BDF_SRC="$GITHUB_WORKSPACE/files/board-redmi_ax6.ipq8074"
+
+          if [ ! -f "$BDF_SRC" ]; then
+            echo "WARNING: BDF source not found, skipping"
+            exit 0
+          fi
+
+          echo "Using BDF source: $BDF_SRC"
+          md5sum "$BDF_SRC"
+
+          # 1. 覆盖源码树里所有可能的 BDF 源文件
+          find ./wrt/package/firmware ./wrt/feeds -type f \( -name "board-2.bin" -o -name "board-redmi_ax6.ipq8074" \) 2>/dev/null | while read f; do
+            cp "$BDF_SRC" "$f"
+            echo "  Replaced source: $f"
+          done
+
+          # 2. 覆盖 dl 目录里已下载的压缩包（含 board-2.bin 的）
+          cd ./wrt/dl/ || exit 0
+          for f in *ath11k*ipq8074* *ipq-wifi* *board-2* *bdwlan*; do
+            [ -f "$f" ] || continue
+            echo "Processing dl file: $f"
+            case "$f" in
+              *.tar.xz)
+                TMPDIR=$(mktemp -d)
+                if tar -xf "$f" -C "$TMPDIR" 2>/dev/null; then
+                  find "$TMPDIR" -type f -name "board-2.bin" | while read b; do
+                    cp "$BDF_SRC" "$b"
+                    echo "    Replaced inside tar.xz: $b"
+                  done
+                  tar -cJf "$f" -C "$TMPDIR" . 2>/dev/null
+                fi
+                rm -rf "$TMPDIR"
+                ;;
+              *.tar.gz)
+                TMPDIR=$(mktemp -d)
+                if tar -xf "$f" -C "$TMPDIR" 2>/dev/null; then
+                  find "$TMPDIR" -type f -name "board-2.bin" | while read b; do
+                    cp "$BDF_SRC" "$b"
+                    echo "    Replaced inside tar.gz: $b"
+                  done
+                  tar -czf "$f" -C "$TMPDIR" . 2>/dev/null
+                fi
+                rm -rf "$TMPDIR"
+                ;;
+              *.bin)
+                cp "$BDF_SRC" "$f"
+                echo "    Replaced dl binary: $f"
+                ;;
+            esac
+          done
+          cd "$GITHUB_WORKSPACE" || exit 0
+
+          # 3. 覆盖 build_dir 里可能已解压的文件
+          find ./wrt/build_dir -type f -path "*ath11k*" -name "board-2.bin" 2>/dev/null | while read f; do
+            cp "$BDF_SRC" "$f"
+            echo "  Replaced build_dir: $f"
+          done
+
+          echo "Override done"
+
       - name: Compile Firmware
         if: env.WRT_TEST != 'true'
         run: |
@@ -208,11 +269,9 @@ jobs:
 
       - name: Delete Old Cache
         run: |
-          # 获取缓存列表并删除
           gh cache list --key ${{ env.WRT_ARCH }}-${{ hashFiles('**/repo_flag') }}- --json key --jq '.[] | .key' | while read -r key; do
             gh cache delete "$key"
           done
-          # 输出缓存状态
           echo "========cache status========"
           echo "ccache: $(du -sh ./wrt/.ccache | cut -f 1)"
           echo "staging: $(du -sh ./wrt/staging_dir | cut -f 1)"
