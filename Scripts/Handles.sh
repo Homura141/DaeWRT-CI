@@ -86,10 +86,10 @@ fi
 # daed 所需的内核 eBPF/BTF 选项 + hostapd 编译错误修复
 # ============================================================
 echo ">>> Applying daed kernel options and hostapd fix..."
-SOURCE_DIR="$GITHUB_WORKSPACE/$WRT_DIR"
-if [ -d "$SOURCE_DIR" ]; then
+WRT_ROOT="$GITHUB_WORKSPACE/$WRT_DIR"
+if [ -d "$WRT_ROOT" ]; then
     (
-        cd "$SOURCE_DIR" || exit 1
+        cd "$WRT_ROOT" || exit 1
 
         # 1. 开启 eBPF/BTF 内核选项（dae 运行前提）
         TARGET_CONFIG=$(find target/linux/qualcommax -maxdepth 1 -name "config-*" | head -1)
@@ -121,15 +121,15 @@ if [ -d "$SOURCE_DIR" ]; then
         fi
     )
 else
-    echo "WARNING: source directory not found at $SOURCE_DIR"
+    echo "WARNING: source directory not found at $WRT_ROOT"
 fi
 
 # ============================================================
 # 修复 apk 包下载（绕过 Alpine GitLab 418 限制）
 # ============================================================
 echo ">>> Fixing apk package download..."
-APK_MK=$(find "$SOURCE_DIR/package/system/apk" -name "Makefile" 2>/dev/null | head -n 1)
-if [ -n "$APK_MK" ] && [ -f "$APK_MK" ]; then
+APK_MK="$WRT_ROOT/package/system/apk/Makefile"
+if [ -f "$APK_MK" ]; then
     # 改成 GitHub 镜像
     sed -i 's|https://gitlab.alpinelinux.org/alpine/apk-tools.git|https://github.com/alpinelinux/apk-tools.git|' "$APK_MK"
     # 关闭哈希校验，防止因 hash 不一致反复重下
@@ -140,18 +140,34 @@ if [ -n "$APK_MK" ] && [ -f "$APK_MK" ]; then
     fi
     echo "apk Makefile patched: GitLab -> GitHub, PKG_HASH=skip"
 else
-    echo "WARNING: apk Makefile not found"
+    echo "WARNING: apk Makefile not found at $APK_MK"
 fi
 
 # ============================================================
-# 修复 ath11k-firmware 和 ipq-wifi 的 PKG_HASH（防止 BDF 被重下覆盖）
+# 手动压缩 luci-app-aurora-config 的 JS
 # ============================================================
-echo ">>> Setting PKG_HASH=skip for ath11k-firmware and ipq-wifi..."
-find "$SOURCE_DIR/package" "$SOURCE_DIR/feeds" -name "Makefile" \( -path "*ath11k-firmware*" -o -path "*ipq-wifi*" \) 2>/dev/null | while read mk; do
-    if grep -q "^PKG_HASH" "$mk"; then
-        sed -i 's/^PKG_HASH:=.*/PKG_HASH:=skip/' "$mk"
-        echo "  Modified PKG_HASH in $mk"
-    fi
-done
+echo ">>> Compressing luci-app-aurora-config JS..."
+
+AURORA_DIR="$WRT_ROOT/package/luci-app-aurora-config"
+
+if [ -d "$AURORA_DIR" ]; then
+    echo "Aurora dir: $AURORA_DIR"
+    # 安装 terser
+    npm install -g terser 2>/dev/null || true
+
+    # 找到所有 JS 文件并压缩
+    find "$AURORA_DIR" -type f -name "*.js" | while read js; do
+        cp "$js" "$js.bak"
+        if terser "$js" -o "$js" -c -m --ecma 2020 2>/dev/null; then
+            echo "  Compressed: $js"
+        else
+            echo "  WARNING: failed to compress $js, restoring"
+            mv "$js.bak" "$js"
+        fi
+        rm -f "$js.bak"
+    done
+else
+    echo "WARNING: luci-app-aurora-config not found at $AURORA_DIR"
+fi
 
 echo ">>> Handles.sh done"
