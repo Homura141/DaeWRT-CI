@@ -119,9 +119,39 @@ if [ -d "$SOURCE_DIR" ]; then
         else
             echo "WARNING: hostapd.c not found at $HOSTAPD_SRC"
         fi
-
-        # 注意：BDF 替换已移至 WRT-CORE.yml 的 Override BDF Before Compile 步骤
     )
 else
     echo "WARNING: source directory not found at $SOURCE_DIR"
 fi
+
+# ============================================================
+# 修复 apk 包下载（绕过 Alpine GitLab 418 限制）
+# ============================================================
+echo ">>> Fixing apk package download..."
+APK_MK=$(find "$SOURCE_DIR/package/system/apk" -name "Makefile" 2>/dev/null | head -n 1)
+if [ -n "$APK_MK" ] && [ -f "$APK_MK" ]; then
+    # 改成 GitHub 镜像
+    sed -i 's|https://gitlab.alpinelinux.org/alpine/apk-tools.git|https://github.com/alpinelinux/apk-tools.git|' "$APK_MK"
+    # 关闭哈希校验，防止因 hash 不一致反复重下
+    sed -i 's/^PKG_HASH:=.*/PKG_HASH:=skip/' "$APK_MK"
+    # 如果 Makefile 里有 PKG_SOURCE_URL，改成 GitHub
+    if grep -q "^PKG_SOURCE_URL" "$APK_MK"; then
+        sed -i 's|^PKG_SOURCE_URL:=.*|PKG_SOURCE_URL:=https://github.com/alpinelinux/apk-tools.git|' "$APK_MK"
+    fi
+    echo "apk Makefile patched: GitLab -> GitHub, PKG_HASH=skip"
+else
+    echo "WARNING: apk Makefile not found"
+fi
+
+# ============================================================
+# 修复 ath11k-firmware 和 ipq-wifi 的 PKG_HASH（防止 BDF 被重下覆盖）
+# ============================================================
+echo ">>> Setting PKG_HASH=skip for ath11k-firmware and ipq-wifi..."
+find "$SOURCE_DIR/package" "$SOURCE_DIR/feeds" -name "Makefile" \( -path "*ath11k-firmware*" -o -path "*ipq-wifi*" \) 2>/dev/null | while read mk; do
+    if grep -q "^PKG_HASH" "$mk"; then
+        sed -i 's/^PKG_HASH:=.*/PKG_HASH:=skip/' "$mk"
+        echo "  Modified PKG_HASH in $mk"
+    fi
+done
+
+echo ">>> Handles.sh done"
