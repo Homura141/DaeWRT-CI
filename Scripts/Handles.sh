@@ -120,20 +120,37 @@ if [ -d "$SOURCE_DIR" ]; then
             echo "WARNING: hostapd.c not found at $HOSTAPD_SRC"
         fi
 
-        # 3. 替换为高功率 BDF（Redmi AX6，来自 QSDK 12.5）
+        # 3. 替换为高功率 BDF（Redmi AX6）
         echo ">>> Replacing Redmi AX6 board-2.bin with high-power version..."
-        BDF_SRC="$GITHUB_WORKSPACE/files/board-redmi_ax6.ipq8074"
-        BDF_DEST=$(find "$SOURCE_DIR/package/firmware" -name "board-redmi_ax6.ipq8074" 2>/dev/null | head -n 1)
-        if [ -f "$BDF_SRC" ] && [ -n "$BDF_DEST" ]; then
-            echo "Source: $BDF_SRC"
-            echo "Target: $BDF_DEST"
-            cp "$BDF_DEST" "${BDF_DEST}.bak"
-            cp "$BDF_SRC" "$BDF_DEST"
-            echo "board-2.bin replaced successfully"
+
+        # 源文件：兼容两种名字
+        if [ -f "$GITHUB_WORKSPACE/files/board-2.bin" ]; then
+            BDF_SRC="$GITHUB_WORKSPACE/files/board-2.bin"
+        elif [ -f "$GITHUB_WORKSPACE/files/board-redmi_ax6.ipq8074" ]; then
+            BDF_SRC="$GITHUB_WORKSPACE/files/board-redmi_ax6.ipq8074"
         else
-            echo "WARNING: BDF source or target not found"
-            echo "  BDF_SRC=$BDF_SRC"
-            echo "  BDF_DEST=$BDF_DEST"
+            BDF_SRC=""
+        fi
+
+        echo "BDF_SRC: $BDF_SRC"
+
+        # 目标：直接定位 ipq-wifi 包目录
+        IPQ_WIFI_DIR=$(find "$SOURCE_DIR/package" -type d -name "ipq-wifi" 2>/dev/null | head -n 1)
+        echo "IPQ_WIFI_DIR: $IPQ_WIFI_DIR"
+
+        if [ -n "$BDF_SRC" ] && [ -f "$BDF_SRC" ] && [ -n "$IPQ_WIFI_DIR" ]; then
+            BDF_DEST="$IPQ_WIFI_DIR/board-redmi_ax6.ipq8074"
+            cp "$BDF_DEST" "${BDF_DEST}.bak" 2>/dev/null || true
+            cp "$BDF_SRC" "$BDF_DEST"
+            echo "BDF replaced successfully"
+            echo "Source MD5:"
+            md5sum "$BDF_SRC"
+            echo "Dest MD5:"
+            md5sum "$BDF_DEST"
+        else
+            echo "WARNING: BDF replace failed"
+            echo "  BDF_SRC exists: $([ -f "$BDF_SRC" ] && echo yes || echo no)"
+            echo "  IPQ_WIFI_DIR found: $([ -n "$IPQ_WIFI_DIR" ] && echo yes || echo no)"
         fi
     )
 else
