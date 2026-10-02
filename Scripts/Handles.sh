@@ -83,7 +83,7 @@ if [ -f "$RUST_FILE" ]; then
 fi
 
 # ============================================================
-# daed 所需的内核 eBPF/BTF 选项 + hostapd 编译错误修复
+# daed 所需的内核 eBPF/BTF 选项 + hostapd 编译错误修复 + 高功率 BDF
 # ============================================================
 echo ">>> Applying daed kernel options and hostapd fix..."
 SOURCE_DIR="$GITHUB_WORKSPACE/$WRT_DIR"
@@ -120,10 +120,9 @@ if [ -d "$SOURCE_DIR" ]; then
             echo "WARNING: hostapd.c not found at $HOSTAPD_SRC"
         fi
 
-        # 3. 替换为高功率 BDF（Redmi AX6）
+        # 3. 替换为高功率 BDF（全面覆盖所有 board-2.bin）
         echo ">>> Replacing Redmi AX6 board-2.bin with high-power version..."
 
-        # 源文件：兼容两种名字
         if [ -f "$GITHUB_WORKSPACE/files/board-2.bin" ]; then
             BDF_SRC="$GITHUB_WORKSPACE/files/board-2.bin"
         elif [ -f "$GITHUB_WORKSPACE/files/board-redmi_ax6.ipq8074" ]; then
@@ -131,26 +130,36 @@ if [ -d "$SOURCE_DIR" ]; then
         else
             BDF_SRC=""
         fi
-
         echo "BDF_SRC: $BDF_SRC"
 
-        # 目标：直接定位 ipq-wifi 包目录
-        IPQ_WIFI_DIR=$(find "$SOURCE_DIR/package" -type d -name "ipq-wifi" 2>/dev/null | head -n 1)
-        echo "IPQ_WIFI_DIR: $IPQ_WIFI_DIR"
+        if [ -n "$BDF_SRC" ] && [ -f "$BDF_SRC" ]; then
+            # 覆盖 ipq-wifi 包的源文件
+            find "$SOURCE_DIR/package" "$SOURCE_DIR/feeds" -type d -name "ipq-wifi" 2>/dev/null | while read d; do
+                if [ -f "$d/board-redmi_ax6.ipq8074" ]; then
+                    cp "$BDF_SRC" "$d/board-redmi_ax6.ipq8074"
+                    echo "Replaced: $d/board-redmi_ax6.ipq8074"
+                fi
+            done
 
-        if [ -n "$BDF_SRC" ] && [ -f "$BDF_SRC" ] && [ -n "$IPQ_WIFI_DIR" ]; then
-            BDF_DEST="$IPQ_WIFI_DIR/board-redmi_ax6.ipq8074"
-            cp "$BDF_DEST" "${BDF_DEST}.bak" 2>/dev/null || true
-            cp "$BDF_SRC" "$BDF_DEST"
-            echo "BDF replaced successfully"
+            # 覆盖 ath11k-firmware 包中的所有 board-2.bin 和 board-redmi_ax6.ipq8074
+            find "$SOURCE_DIR/package" "$SOURCE_DIR/feeds" -type d -name "ath11k-firmware*" 2>/dev/null | while read d; do
+                find "$d" \( -name "board-2.bin" -o -name "board-redmi_ax6.ipq8074" \) 2>/dev/null | while read f; do
+                    cp "$BDF_SRC" "$f"
+                    echo "Replaced: $f"
+                done
+            done
+
+            # 兜底：扫描整个 package/feeds 里所有 board-2.bin 源文件
+            find "$SOURCE_DIR/package" "$SOURCE_DIR/feeds" -name "board-2.bin" 2>/dev/null | while read f; do
+                cp "$BDF_SRC" "$f"
+                echo "Replaced (global): $f"
+            done
+
+            echo "BDF replacement done"
             echo "Source MD5:"
             md5sum "$BDF_SRC"
-            echo "Dest MD5:"
-            md5sum "$BDF_DEST"
         else
-            echo "WARNING: BDF replace failed"
-            echo "  BDF_SRC exists: $([ -f "$BDF_SRC" ] && echo yes || echo no)"
-            echo "  IPQ_WIFI_DIR found: $([ -n "$IPQ_WIFI_DIR" ] && echo yes || echo no)"
+            echo "WARNING: BDF_SRC not found"
         fi
     )
 else
