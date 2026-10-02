@@ -194,45 +194,28 @@ jobs:
           make download -j$(nproc)
 
       # ============================================================
-      # 关键步骤：修改 ipq-wifi Makefile 的 wildcard 路径，让它安装 files/ 里的高功率 BDF
+      # 关键步骤：把 BDF 放到 OpenWrt overlay 目录，编译时直接叠加到 rootfs
       # ============================================================
-      - name: Override BDF in ipq-wifi Makefile
+      - name: Override BDF via overlay
         if: env.WRT_TEST != 'true'
         run: |
-          # 1. 准备 BDF 源文件
           BDF_SRC="$GITHUB_WORKSPACE/files/board-2.bin"
-          BDF_ALT="$GITHUB_WORKSPACE/files/board-redmi_ax6.ipq8074"
+          [ -f "$BDF_SRC" ] || BDF_SRC="$GITHUB_WORKSPACE/files/board-redmi_ax6.ipq8074"
 
-          if [ -f "$BDF_SRC" ]; then
-            cp "$BDF_SRC" "$BDF_ALT"
-            echo "Using BDF: $BDF_SRC -> $BDF_ALT"
-          elif [ -f "$BDF_ALT" ]; then
-            echo "Using BDF: $BDF_ALT"
-          else
+          if [ ! -f "$BDF_SRC" ]; then
             echo "WARNING: BDF source not found, skipping"
             exit 0
           fi
-          md5sum "$BDF_ALT"
 
-          # 2. 修改 ipq-wifi Makefile，让 wildcard 多搜一个路径
-          WRT_ROOT="$GITHUB_WORKSPACE/wrt"
-          IPQ_WIFI_MK="$WRT_ROOT/package/firmware/ipq-wifi/Makefile"
-          ATH11K_MK="$WRT_ROOT/package/firmware/ath11k-firmware/Makefile"
+          echo "Using BDF source: $BDF_SRC"
+          md5sum "$BDF_SRC"
 
-          if [ -f "$IPQ_WIFI_MK" ]; then
-            # 跳过 tar 快照校验
-            sed -i 's/^PKG_MIRROR_HASH:=.*/PKG_MIRROR_HASH:=skip/' "$IPQ_WIFI_MK"
-            # 关键改动：wildcard 搜索路径加上 $(TOPDIR)/../files/
-            sed -i 's|\$(PKG_BUILD_DIR)/board-\$(1)\.\*|$(PKG_BUILD_DIR)/board-$(1).* $(TOPDIR)/../files/board-$(1).*|g' "$IPQ_WIFI_MK"
-            echo "Patched ipq-wifi Makefile wildcard path"
-            echo "===== Check wildcard line ====="
-            grep -n "wildcard" "$IPQ_WIFI_MK" | head -5
-            echo "===== End ====="
-          else
-            echo "WARNING: $IPQ_WIFI_MK not found"
-          fi
-
-          [ -f "$ATH11K_MK" ] && sed -i 's/^PKG_MIRROR_HASH:=.*/PKG_MIRROR_HASH:=skip/' "$ATH11K_MK"
+          # 把 BDF 放到 OpenWrt 源码的 overlay 目录，编译时直接叠加到 rootfs
+          OVERLAY_DIR="$GITHUB_WORKSPACE/wrt/files/lib/firmware/ath11k/IPQ8074/hw2.0"
+          mkdir -p "$OVERLAY_DIR"
+          cp "$BDF_SRC" "$OVERLAY_DIR/board-2.bin"
+          echo "Placed BDF at: $OVERLAY_DIR/board-2.bin"
+          md5sum "$OVERLAY_DIR/board-2.bin"
 
           echo "Override done"
 
@@ -294,12 +277,6 @@ jobs:
           tag_name: ${{env.CI_NAME}}-${{env.WRT_CONFIG}}_${{env.WRT_DATE}}
           files: ./wrt/upload/*.*
           body: |
-            这是个平台固件包，内含多个设备！
-            请注意选择你需要的设备固件！
-            不要问，刷就完事了！
-
-            全系带开源硬件加速，别问了！
-
             源码：${{env.WRT_REPO}}
             分支：${{env.WRT_BRANCH}}
             提交：${{env.WRT_HASH}}
