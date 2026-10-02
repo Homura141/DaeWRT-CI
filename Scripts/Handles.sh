@@ -81,9 +81,9 @@ if [ -f "$RUST_FILE" ]; then
 fi
 
 # ============================================================
-# daed 所需的内核 eBPF/BTF 选项 + hostapd 编译错误修复
+# dae 所需的内核 eBPF/BTF 选项 + hostapd 编译错误修复
 # ============================================================
-echo ">>> Applying daed kernel options and hostapd fix..."
+echo ">>> Applying dae kernel options and hostapd fix..."
 WRT_ROOT="$GITHUB_WORKSPACE/$WRT_DIR"
 if [ -d "$WRT_ROOT" ]; then
     (
@@ -149,5 +149,51 @@ if [ -f "$CONFIG_FILE" ]; then
 else
     echo "  WARNING: .config not found"
 fi
+
+# ============================================================
+# 运行时 BDF 替换（绕过所有编译时替换的复杂性）
+# ============================================================
+echo ">>> Adding runtime BDF replacement..."
+
+BASE_FILES_DIR="$GITHUB_WORKSPACE/$WRT_DIR/package/base-files/files"
+mkdir -p "$BASE_FILES_DIR/etc/init.d"
+mkdir -p "$BASE_FILES_DIR/etc/rc.d"
+
+# 1. 把高功率 BDF 放进 /etc/
+if [ -f "$GITHUB_WORKSPACE/files/board-2.bin" ]; then
+    cp "$GITHUB_WORKSPACE/files/board-2.bin" "$BASE_FILES_DIR/etc/board-2.bin.highpower"
+    echo "  BDF placed at /etc/board-2.bin.highpower"
+elif [ -f "$GITHUB_WORKSPACE/files/board-redmi_ax6.ipq8074" ]; then
+    cp "$GITHUB_WORKSPACE/files/board-redmi_ax6.ipq8074" "$BASE_FILES_DIR/etc/board-2.bin.highpower"
+    echo "  BDF placed at /etc/board-2.bin.highpower"
+else
+    echo "  WARNING: BDF source not found"
+fi
+
+# 2. 创建 init.d 脚本，每次启动时替换 BDF
+cat > "$BASE_FILES_DIR/etc/init.d/replace-bdf" << 'INITEOF'
+#!/bin/sh /etc/rc.common
+START=99
+
+boot() {
+    if [ -f /etc/board-2.bin.highpower ]; then
+        if ! cmp -s /etc/board-2.bin.highpower /lib/firmware/ath11k/IPQ8074/hw2.0/board-2.bin; then
+            cp /etc/board-2.bin.highpower /lib/firmware/ath11k/IPQ8074/hw2.0/board-2.bin
+            logger -t replace-bdf "High power BDF applied"
+        fi
+    fi
+}
+
+start() {
+    boot
+}
+INITEOF
+
+chmod +x "$BASE_FILES_DIR/etc/init.d/replace-bdf"
+
+# 3. 创建启动链接（S99 最后执行）
+ln -sf ../init.d/replace-bdf "$BASE_FILES_DIR/etc/rc.d/S99replace-bdf"
+
+echo "  init.d script created"
 
 echo ">>> Handles.sh done"
