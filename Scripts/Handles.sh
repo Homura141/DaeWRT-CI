@@ -89,7 +89,6 @@ if [ -d "$WRT_ROOT" ]; then
     (
         cd "$WRT_ROOT" || exit 1
 
-        # 1. 开启 eBPF/BTF 内核选项（dae 运行前提）
         TARGET_CONFIG=$(find target/linux/qualcommax -maxdepth 1 -name "config-*" | head -1)
         if [ -n "$TARGET_CONFIG" ]; then
             scripts/config --file "$TARGET_CONFIG" \
@@ -109,7 +108,6 @@ if [ -d "$WRT_ROOT" ]; then
             echo "WARNING: qualcommax target config not found"
         fi
 
-        # 2. 修复 hostapd he_mu_edca 编译错误（注释掉报错行）
         HOSTAPD_SRC="package/network/services/hostapd/src/ap/hostapd.c"
         if [ -f "$HOSTAPD_SRC" ]; then
             sed -i 's/hapd->iface->conf->he_mu_edca.he_qos_info &= 0xfff0;/\/\* & \*\//' "$HOSTAPD_SRC"
@@ -123,7 +121,7 @@ else
 fi
 
 # ============================================================
-# 修复 apk 包下载（绕过 Alpine GitLab 418 限制）
+# 修复 apk 包下载
 # ============================================================
 echo ">>> Fixing apk package download..."
 APK_MK="$WRT_ROOT/package/system/apk/Makefile"
@@ -133,50 +131,39 @@ if [ -f "$APK_MK" ]; then
     if grep -q "^PKG_SOURCE_URL" "$APK_MK"; then
         sed -i 's|^PKG_SOURCE_URL:=.*|PKG_SOURCE_URL:=https://github.com/alpinelinux/apk-tools.git|' "$APK_MK"
     fi
-    echo "apk Makefile patched: GitLab -> GitHub, PKG_HASH=skip"
-else
-    echo "WARNING: apk Makefile not found at $APK_MK"
+    echo "apk Makefile patched"
 fi
 
 # ============================================================
 # 强制禁用 daed，只保留 dae
 # ============================================================
-echo ">>> Disabling luci-app-daed (only keep dae)..."
+echo ">>> Disabling luci-app-daed..."
 CONFIG_FILE="$GITHUB_WORKSPACE/$WRT_DIR/.config"
 if [ -f "$CONFIG_FILE" ]; then
     sed -i 's/^CONFIG_PACKAGE_luci-app-daed=y/CONFIG_PACKAGE_luci-app-daed=n/' "$CONFIG_FILE"
     echo "  luci-app-daed disabled"
-else
-    echo "  WARNING: .config not found"
 fi
 
 # ============================================================
-# 修改 ipq-wifi 的 install 宏，让它直接安装我们的高功率 BDF
+# 编译前替换 ipq-wifi 源文件（利用 OpenWrt files/ 覆盖机制）
 # ============================================================
-echo ">>> Patching ipq-wifi install macro..."
+echo ">>> Placing high-power BDF into ipq-wifi files/ ..."
 
-IPQ_WIFI_MK="$WRT_ROOT/package/firmware/ipq-wifi/Makefile"
+IPQ_WIFI_DIR="$WRT_ROOT/package/firmware/ipq-wifi"
 
-if [ -f "$IPQ_WIFI_MK" ]; then
-    if [ ! -f "$GITHUB_WORKSPACE/files/board-2.bin" ]; then
-        echo "  WARNING: files/board-2.bin not found, skipping"
+if [ -d "$IPQ_WIFI_DIR" ]; then
+    mkdir -p "$IPQ_WIFI_DIR/files"
+    if [ -f "$GITHUB_WORKSPACE/files/board-2.bin" ]; then
+        cp "$GITHUB_WORKSPACE/files/board-2.bin" "$IPQ_WIFI_DIR/files/board-redmi_ax6.ipq8074"
+        echo "  Placed BDF into ipq-wifi/files/"
+        md5sum "$IPQ_WIFI_DIR/files/board-redmi_ax6.ipq8074"
     else
-        echo "  BDF source MD5:"
-        md5sum "$GITHUB_WORKSPACE/files/board-2.bin"
-
-        # 1. 跳过 tar 快照校验
-        sed -i 's/^PKG_MIRROR_HASH:=.*/PKG_MIRROR_HASH:=skip/' "$IPQ_WIFI_MK"
-
-        # 2. 替换 install 宏里的源文件路径
-        sed -i 's|\$(INSTALL_DATA) \$(1) \$(2)/lib/firmware/ath11k/\$(3)/board-2.bin|$(INSTALL_DATA) $(TOPDIR)/../files/board-2.bin $(2)/lib/firmware/ath11k/$(3)/board-2.bin|' "$IPQ_WIFI_MK"
-
-        # 3. 打印修改后的宏
-        echo "===== Modified macro ====="
-        grep -A3 "define ipq-wifi-install-ath11-one-to" "$IPQ_WIFI_MK"
-        echo "===== End ====="
+        echo "  WARNING: files/board-2.bin not found"
     fi
+
+    sed -i 's/^PKG_MIRROR_HASH:=.*/PKG_MIRROR_HASH:=skip/' "$IPQ_WIFI_DIR/Makefile"
 else
-    echo "  WARNING: $IPQ_WIFI_MK not found"
+    echo "  WARNING: $IPQ_WIFI_DIR not found"
 fi
 
 echo ">>> Handles.sh done"
