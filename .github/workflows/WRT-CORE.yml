@@ -194,42 +194,45 @@ jobs:
           make download -j$(nproc)
 
       # ============================================================
-      # 关键步骤：修改 ipq-wifi 的 Makefile，让它安装我们的高功率 BDF
+      # 关键步骤：修改 ipq-wifi Makefile 的 wildcard 路径，让它安装 files/ 里的高功率 BDF
       # ============================================================
       - name: Override BDF in ipq-wifi Makefile
         if: env.WRT_TEST != 'true'
         run: |
+          # 1. 准备 BDF 源文件
           BDF_SRC="$GITHUB_WORKSPACE/files/board-2.bin"
-          [ -f "$BDF_SRC" ] || BDF_SRC="$GITHUB_WORKSPACE/files/board-redmi_ax6.ipq8074"
+          BDF_ALT="$GITHUB_WORKSPACE/files/board-redmi_ax6.ipq8074"
 
-          if [ ! -f "$BDF_SRC" ]; then
+          if [ -f "$BDF_SRC" ]; then
+            cp "$BDF_SRC" "$BDF_ALT"
+            echo "Using BDF: $BDF_SRC -> $BDF_ALT"
+          elif [ -f "$BDF_ALT" ]; then
+            echo "Using BDF: $BDF_ALT"
+          else
             echo "WARNING: BDF source not found, skipping"
             exit 0
           fi
+          md5sum "$BDF_ALT"
 
-          echo "Using BDF source: $BDF_SRC"
-          md5sum "$BDF_SRC"
-
+          # 2. 修改 ipq-wifi Makefile，让 wildcard 多搜一个路径
           WRT_ROOT="$GITHUB_WORKSPACE/wrt"
           IPQ_WIFI_MK="$WRT_ROOT/package/firmware/ipq-wifi/Makefile"
           ATH11K_MK="$WRT_ROOT/package/firmware/ath11k-firmware/Makefile"
-          OVERRIDE_MK="$GITHUB_WORKSPACE/files/ipq-wifi-override.mk"
 
-          # 1. 跳过 tar 快照校验，防止重新下载覆盖
-          [ -f "$IPQ_WIFI_MK" ] && sed -i 's/^PKG_MIRROR_HASH:=.*/PKG_MIRROR_HASH:=skip/' "$IPQ_WIFI_MK"
-          [ -f "$ATH11K_MK" ] && sed -i 's/^PKG_MIRROR_HASH:=.*/PKG_MIRROR_HASH:=skip/' "$ATH11K_MK"
-
-          # 2. 从外部文件追加 install-overlay 覆盖
-          if [ -f "$IPQ_WIFI_MK" ] && [ -f "$OVERRIDE_MK" ]; then
-            echo "" >> "$IPQ_WIFI_MK"
-            cat "$OVERRIDE_MK" >> "$IPQ_WIFI_MK"
-            echo "Appended install-overlay override to ipq-wifi Makefile"
-            echo "===== Tail of ipq-wifi Makefile ====="
-            tail -10 "$IPQ_WIFI_MK"
+          if [ -f "$IPQ_WIFI_MK" ]; then
+            # 跳过 tar 快照校验
+            sed -i 's/^PKG_MIRROR_HASH:=.*/PKG_MIRROR_HASH:=skip/' "$IPQ_WIFI_MK"
+            # 关键改动：wildcard 搜索路径加上 $(TOPDIR)/../files/
+            sed -i 's|\$(PKG_BUILD_DIR)/board-\$(1)\.\*|$(PKG_BUILD_DIR)/board-$(1).* $(TOPDIR)/../files/board-$(1).*|g' "$IPQ_WIFI_MK"
+            echo "Patched ipq-wifi Makefile wildcard path"
+            echo "===== Check wildcard line ====="
+            grep -n "wildcard" "$IPQ_WIFI_MK" | head -5
             echo "===== End ====="
           else
-            echo "WARNING: Makefile or override file missing"
+            echo "WARNING: $IPQ_WIFI_MK not found"
           fi
+
+          [ -f "$ATH11K_MK" ] && sed -i 's/^PKG_MIRROR_HASH:=.*/PKG_MIRROR_HASH:=skip/' "$ATH11K_MK"
 
           echo "Override done"
 
