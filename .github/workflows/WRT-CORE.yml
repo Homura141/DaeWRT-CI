@@ -194,9 +194,9 @@ jobs:
           make download -j$(nproc)
 
       # ============================================================
-      # 关键步骤：把 BDF 放到 OpenWrt overlay 目录，编译时直接叠加到 rootfs
+      # 关键步骤：修改 ipq-wifi 的 Build/Compile，让它用我们的高功率 BDF
       # ============================================================
-      - name: Override BDF via overlay
+      - name: Override BDF in ipq-wifi Makefile
         if: env.WRT_TEST != 'true'
         run: |
           BDF_SRC="$GITHUB_WORKSPACE/files/board-2.bin"
@@ -210,12 +210,27 @@ jobs:
           echo "Using BDF source: $BDF_SRC"
           md5sum "$BDF_SRC"
 
-          # 把 BDF 放到 OpenWrt 源码的 overlay 目录，编译时直接叠加到 rootfs
-          OVERLAY_DIR="$GITHUB_WORKSPACE/wrt/files/lib/firmware/ath11k/IPQ8074/hw2.0"
-          mkdir -p "$OVERLAY_DIR"
-          cp "$BDF_SRC" "$OVERLAY_DIR/board-2.bin"
-          echo "Placed BDF at: $OVERLAY_DIR/board-2.bin"
-          md5sum "$OVERLAY_DIR/board-2.bin"
+          WRT_ROOT="$GITHUB_WORKSPACE/wrt"
+          IPQ_WIFI_MK="$WRT_ROOT/package/firmware/ipq-wifi/Makefile"
+          ATH11K_MK="$WRT_ROOT/package/firmware/ath11k-firmware/Makefile"
+
+          if [ ! -f "$IPQ_WIFI_MK" ]; then
+            echo "WARNING: $IPQ_WIFI_MK not found"
+            exit 0
+          fi
+
+          # 1. 跳过 tar 快照校验
+          sed -i 's/^PKG_MIRROR_HASH:=.*/PKG_MIRROR_HASH:=skip/' "$IPQ_WIFI_MK"
+          [ -f "$ATH11K_MK" ] && sed -i 's/^PKG_MIRROR_HASH:=.*/PKG_MIRROR_HASH:=skip/' "$ATH11K_MK"
+
+          # 2. 在 ipq-wifi Makefile 末尾追加 Build/Compile 覆盖定义
+          #    核心：在编译时把 files/board-2.bin 复制到 PKG_BUILD_DIR/board-redmi_ax6.ipq8074
+          #    这样原来的 install-overlay 就会安装我们的文件
+          printf '\n# Override Build/Compile to use high-power BDF\ndefine Build/Compile\n\t$(CP) $(TOPDIR)/../files/board-2.bin $(PKG_BUILD_DIR)/board-redmi_ax6.ipq8074\nendef\n' >> "$IPQ_WIFI_MK"
+
+          echo "===== Tail of ipq-wifi Makefile (Tab shown as ^I) ====="
+          tail -8 "$IPQ_WIFI_MK" | cat -A
+          echo "===== End ====="
 
           echo "Override done"
 
@@ -277,6 +292,12 @@ jobs:
           tag_name: ${{env.CI_NAME}}-${{env.WRT_CONFIG}}_${{env.WRT_DATE}}
           files: ./wrt/upload/*.*
           body: |
+            这是个平台固件包，内含多个设备！
+            请注意选择你需要的设备固件！
+            不要问，刷就完事了！
+
+            全系带开源硬件加速，别问了！
+
             源码：${{env.WRT_REPO}}
             分支：${{env.WRT_BRANCH}}
             提交：${{env.WRT_HASH}}
