@@ -151,49 +151,32 @@ else
 fi
 
 # ============================================================
-# 运行时 BDF 替换（绕过所有编译时替换的复杂性）
+# 修改 ipq-wifi 的 install 宏，让它直接安装我们的高功率 BDF
 # ============================================================
-echo ">>> Adding runtime BDF replacement..."
+echo ">>> Patching ipq-wifi install macro..."
 
-BASE_FILES_DIR="$GITHUB_WORKSPACE/$WRT_DIR/package/base-files/files"
-mkdir -p "$BASE_FILES_DIR/etc/init.d"
-mkdir -p "$BASE_FILES_DIR/etc/rc.d"
+IPQ_WIFI_MK="$WRT_ROOT/package/firmware/ipq-wifi/Makefile"
 
-# 1. 把高功率 BDF 放进 /etc/
-if [ -f "$GITHUB_WORKSPACE/files/board-2.bin" ]; then
-    cp "$GITHUB_WORKSPACE/files/board-2.bin" "$BASE_FILES_DIR/etc/board-2.bin.highpower"
-    echo "  BDF placed at /etc/board-2.bin.highpower"
-elif [ -f "$GITHUB_WORKSPACE/files/board-redmi_ax6.ipq8074" ]; then
-    cp "$GITHUB_WORKSPACE/files/board-redmi_ax6.ipq8074" "$BASE_FILES_DIR/etc/board-2.bin.highpower"
-    echo "  BDF placed at /etc/board-2.bin.highpower"
-else
-    echo "  WARNING: BDF source not found"
-fi
+if [ -f "$IPQ_WIFI_MK" ]; then
+    if [ ! -f "$GITHUB_WORKSPACE/files/board-2.bin" ]; then
+        echo "  WARNING: files/board-2.bin not found, skipping"
+    else
+        echo "  BDF source MD5:"
+        md5sum "$GITHUB_WORKSPACE/files/board-2.bin"
 
-# 2. 创建 init.d 脚本，每次启动时替换 BDF
-cat > "$BASE_FILES_DIR/etc/init.d/replace-bdf" << 'INITEOF'
-#!/bin/sh /etc/rc.common
-START=99
+        # 1. 跳过 tar 快照校验
+        sed -i 's/^PKG_MIRROR_HASH:=.*/PKG_MIRROR_HASH:=skip/' "$IPQ_WIFI_MK"
 
-boot() {
-    if [ -f /etc/board-2.bin.highpower ]; then
-        if ! cmp -s /etc/board-2.bin.highpower /lib/firmware/ath11k/IPQ8074/hw2.0/board-2.bin; then
-            cp /etc/board-2.bin.highpower /lib/firmware/ath11k/IPQ8074/hw2.0/board-2.bin
-            logger -t replace-bdf "High power BDF applied"
-        fi
+        # 2. 替换 install 宏里的源文件路径
+        sed -i 's|\$(INSTALL_DATA) \$(1) \$(2)/lib/firmware/ath11k/\$(3)/board-2.bin|$(INSTALL_DATA) $(TOPDIR)/../files/board-2.bin $(2)/lib/firmware/ath11k/$(3)/board-2.bin|' "$IPQ_WIFI_MK"
+
+        # 3. 打印修改后的宏
+        echo "===== Modified macro ====="
+        grep -A3 "define ipq-wifi-install-ath11-one-to" "$IPQ_WIFI_MK"
+        echo "===== End ====="
     fi
-}
-
-start() {
-    boot
-}
-INITEOF
-
-chmod +x "$BASE_FILES_DIR/etc/init.d/replace-bdf"
-
-# 3. 创建启动链接（S99 最后执行）
-ln -sf ../init.d/replace-bdf "$BASE_FILES_DIR/etc/rc.d/S99replace-bdf"
-
-echo "  init.d script created"
+else
+    echo "  WARNING: $IPQ_WIFI_MK not found"
+fi
 
 echo ">>> Handles.sh done"
