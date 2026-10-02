@@ -213,25 +213,22 @@ jobs:
           WRT_ROOT="$GITHUB_WORKSPACE/wrt"
           IPQ_WIFI_MK="$WRT_ROOT/package/firmware/ipq-wifi/Makefile"
           ATH11K_MK="$WRT_ROOT/package/firmware/ath11k-firmware/Makefile"
+          OVERRIDE_MK="$GITHUB_WORKSPACE/files/ipq-wifi-override.mk"
 
           # 1. 跳过 tar 快照校验，防止重新下载覆盖
           [ -f "$IPQ_WIFI_MK" ] && sed -i 's/^PKG_MIRROR_HASH:=.*/PKG_MIRROR_HASH:=skip/' "$IPQ_WIFI_MK"
           [ -f "$ATH11K_MK" ] && sed -i 's/^PKG_MIRROR_HASH:=.*/PKG_MIRROR_HASH:=skip/' "$ATH11K_MK"
 
-          # 2. 在 ipq-wifi Makefile 末尾追加自定义 install-overlay，
-          #    覆盖原有的定义，直接从 files/board-2.bin 安装
-          if [ -f "$IPQ_WIFI_MK" ]; then
-            cat >> "$IPQ_WIFI_MK" << 'MAKEEOF'
-
-# === 高功率 BDF 覆盖（由 WRT-CORE.yml 追加） ===
-define Package/ipq-wifi-redmi_ax6/install-overlay
-	$(INSTALL_DIR) $(1)/lib/firmware/ath11k/IPQ8074/hw2.0/
-	$(INSTALL_DATA) $(TOPDIR)/../files/board-2.bin $(1)/lib/firmware/ath11k/IPQ8074/hw2.0/board-2.bin
-endef
-MAKEEOF
+          # 2. 从外部文件追加 install-overlay 覆盖
+          if [ -f "$IPQ_WIFI_MK" ] && [ -f "$OVERRIDE_MK" ]; then
+            echo "" >> "$IPQ_WIFI_MK"
+            cat "$OVERRIDE_MK" >> "$IPQ_WIFI_MK"
             echo "Appended install-overlay override to ipq-wifi Makefile"
+            echo "===== Tail of ipq-wifi Makefile ====="
+            tail -10 "$IPQ_WIFI_MK"
+            echo "===== End ====="
           else
-            echo "WARNING: $IPQ_WIFI_MK not found"
+            echo "WARNING: Makefile or override file missing"
           fi
 
           echo "Override done"
