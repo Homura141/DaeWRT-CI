@@ -194,29 +194,51 @@ jobs:
           make download -j$(nproc)
 
       # ============================================================
-      # 关键步骤：修改 ipq-wifi 的 Build/Compile，让它用我们的高功率 BDF
+      # 关键步骤：校验 BDF MD5 + 修改 ipq-wifi Makefile
       # ============================================================
       - name: Override BDF in ipq-wifi Makefile
         if: env.WRT_TEST != 'true'
         run: |
+          # ============================================================
+          # BDF MD5 校验（不匹配直接中止编译）
+          # ============================================================
+          EXPECTED_MD5="9b04d4a7e5ce6391b899a6f61526366b"
+
           BDF_SRC="$GITHUB_WORKSPACE/files/board-2.bin"
           [ -f "$BDF_SRC" ] || BDF_SRC="$GITHUB_WORKSPACE/files/board-redmi_ax6.ipq8074"
 
           if [ ! -f "$BDF_SRC" ]; then
-            echo "WARNING: BDF source not found, skipping"
-            exit 0
+            echo "ERROR: BDF source not found!"
+            echo "  Tried: $GITHUB_WORKSPACE/files/board-2.bin"
+            echo "  Tried: $GITHUB_WORKSPACE/files/board-redmi_ax6.ipq8074"
+            exit 1
           fi
 
-          echo "Using BDF source: $BDF_SRC"
-          md5sum "$BDF_SRC"
+          ACTUAL_MD5=$(md5sum "$BDF_SRC" | awk '{print $1}')
+          echo "===== BDF MD5 Check ====="
+          echo "  File:     $BDF_SRC"
+          echo "  Expected: $EXPECTED_MD5"
+          echo "  Actual:   $ACTUAL_MD5"
+          echo "========================="
 
+          if [ "$ACTUAL_MD5" != "$EXPECTED_MD5" ]; then
+            echo "ERROR: BDF MD5 mismatch! Aborting compile."
+            echo "  Please check your files/board-2.bin and try again."
+            exit 1
+          fi
+
+          echo "BDF MD5 check passed."
+
+          # ============================================================
+          # 修改 ipq-wifi Makefile，让它用我们的高功率 BDF
+          # ============================================================
           WRT_ROOT="$GITHUB_WORKSPACE/wrt"
           IPQ_WIFI_MK="$WRT_ROOT/package/firmware/ipq-wifi/Makefile"
           ATH11K_MK="$WRT_ROOT/package/firmware/ath11k-firmware/Makefile"
 
           if [ ! -f "$IPQ_WIFI_MK" ]; then
-            echo "WARNING: $IPQ_WIFI_MK not found"
-            exit 0
+            echo "ERROR: $IPQ_WIFI_MK not found"
+            exit 1
           fi
 
           # 1. 跳过 tar 快照校验
@@ -224,8 +246,6 @@ jobs:
           [ -f "$ATH11K_MK" ] && sed -i 's/^PKG_MIRROR_HASH:=.*/PKG_MIRROR_HASH:=skip/' "$ATH11K_MK"
 
           # 2. 在 ipq-wifi Makefile 末尾追加 Build/Compile 覆盖定义
-          #    核心：在编译时把 files/board-2.bin 复制到 PKG_BUILD_DIR/board-redmi_ax6.ipq8074
-          #    这样原来的 install-overlay 就会安装我们的文件
           printf '\n# Override Build/Compile to use high-power BDF\ndefine Build/Compile\n\t$(CP) $(TOPDIR)/../files/board-2.bin $(PKG_BUILD_DIR)/board-redmi_ax6.ipq8074\nendef\n' >> "$IPQ_WIFI_MK"
 
           echo "===== Tail of ipq-wifi Makefile (Tab shown as ^I) ====="
