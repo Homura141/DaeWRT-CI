@@ -111,9 +111,9 @@ if [ -f "$CONFIG_FILE" ]; then
 fi
 
 # ============================================================
-# BDF 进固件 squashfs（重置后保留）：双保险
+# 直接替换 BDF（进 squashfs，开机即 29dBm，不依赖脚本）
 # ============================================================
-echo ">>> Adding BDF to firmware squashfs..."
+echo ">>> Setting up direct BDF replacement..."
 
 BDF_SRC="$GITHUB_WORKSPACE/files/board-2.bin"
 [ -f "$BDF_SRC" ] || BDF_SRC="$GITHUB_WORKSPACE/files/board-redmi_ax6.ipq8074"
@@ -125,45 +125,29 @@ fi
 echo "  BDF source MD5:"
 md5sum "$BDF_SRC"
 
-# ---------- 保险 1：base-files/files/ + init.d 脚本 ----------
-BASE_FILES_DIR="$WRT_ROOT/package/base-files/files"
-mkdir -p "$BASE_FILES_DIR/etc/init.d"
-mkdir -p "$BASE_FILES_DIR/etc/rc.d"
+# 1. 把 BDF 放到 base-files 里的驱动路径（编译后进 squashfs）
+BASE_FW_DIR="$WRT_ROOT/package/base-files/files/lib/firmware/ath11k/IPQ8074/hw2.0"
+mkdir -p "$BASE_FW_DIR"
+cp "$BDF_SRC" "$BASE_FW_DIR/board-2.bin"
+echo "  [1/2] Placed in base-files: $BASE_FW_DIR/board-2.bin"
+md5sum "$BASE_FW_DIR/board-2.bin"
 
-cp "$BDF_SRC" "$BASE_FILES_DIR/etc/board-2.bin.highpower"
+# 2. 修改 ipq-wifi 宏，让它不装 board-2.bin（避免覆盖）
+IPQ_WIFI_MK="$WRT_ROOT/package/firmware/ipq-wifi/Makefile"
+if [ -f "$IPQ_WIFI_MK" ]; then
+    sed -i 's|\$(INSTALL_DATA) \$(1) \$(2)/lib/firmware/ath11k/\$(3)/board-2.bin|true|' "$IPQ_WIFI_MK"
+    sed -i 's/^PKG_MIRROR_HASH:=.*/PKG_MIRROR_HASH:=skip/' "$IPQ_WIFI_MK"
+    echo "  [2/2] Disabled ipq-wifi BDF install"
+    echo "  ===== Check macro ====="
+    grep -A2 "define ipq-wifi-install-ath11-one-to" "$IPQ_WIFI_MK"
+    echo "  ===== End ====="
+fi
 
-cat > "$BASE_FILES_DIR/etc/init.d/replace-bdf" << 'INITEOF'
-#!/bin/sh /etc/rc.common
-START=99
-
-start() {
-    if [ -f /etc/board-2.bin.highpower ]; then
-        cp /etc/board-2.bin.highpower /lib/firmware/ath11k/IPQ8074/hw2.0/board-2.bin
-        logger -t replace-bdf "High power BDF applied"
-    fi
-}
-
-boot() {
-    start
-}
-INITEOF
-
-chmod +x "$BASE_FILES_DIR/etc/init.d/replace-bdf"
-ln -sf ../init.d/replace-bdf "$BASE_FILES_DIR/etc/rc.d/S99replace-bdf"
-
-echo "  [1/2] Placed in base-files/files/"
-md5sum "$BASE_FILES_DIR/etc/board-2.bin.highpower"
-
-# 清 base-files stamp，强制重新安装
+# 3. 清 base-files / ipq-wifi / ath11k-firmware 的 stamp，强制重新安装
+echo ">>> Clearing stamps..."
 find "$WRT_ROOT/staging_dir" -name ".base-files*" -type f -delete 2>/dev/null
-find "$WRT_ROOT/staging_dir" -path "*stamp*" -name "*base-files*" -delete 2>/dev/null
-echo "  base-files stamps cleared"
-
-# ---------- 保险 2：wrt/files/ rootfs overlay ----------
-WRT_FILES_DIR="$WRT_ROOT/files"
-mkdir -p "$WRT_FILES_DIR/lib/firmware/ath11k/IPQ8074/hw2.0"
-cp "$BDF_SRC" "$WRT_FILES_DIR/lib/firmware/ath11k/IPQ8074/hw2.0/board-2.bin"
-echo "  [2/2] Placed in wrt/files/ rootfs overlay"
-md5sum "$WRT_FILES_DIR/lib/firmware/ath11k/IPQ8074/hw2.0/board-2.bin"
+find "$WRT_ROOT/staging_dir" -name ".ipq-wifi*" -type f -delete 2>/dev/null
+find "$WRT_ROOT/staging_dir" -name ".ath11k-firmware*" -type f -delete 2>/dev/null
+echo "  Stamps cleared"
 
 echo ">>> Handles.sh done"
