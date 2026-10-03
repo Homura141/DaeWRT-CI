@@ -111,6 +111,27 @@ if [ -f "$CONFIG_FILE" ]; then
 fi
 
 # ============================================================
+# 应用 ath11k 内存泄漏修复补丁
+# ============================================================
+echo ">>> Applying ath11k memory leak fix patch..."
+
+PATCH_SRC="$GITHUB_WORKSPACE/patches/911-ath11k-reduce-dma-buffer-to-save-memory.patch"
+PATCH_DEST_DIR="$WRT_ROOT/package/kernel/mac80211/patches/ath11k"
+
+if [ -f "$PATCH_SRC" ]; then
+    mkdir -p "$PATCH_DEST_DIR"
+    cp "$PATCH_SRC" "$PATCH_DEST_DIR/"
+    echo "  Patch copied to mac80211"
+
+    # 清理 mac80211 的编译 stamp，强制重新编译
+    find "$WRT_ROOT/build_dir" -maxdepth 3 -type d -name "mac80211-*" -exec rm -rf {} + 2>/dev/null
+    find "$WRT_ROOT/staging_dir" -name ".mac80211*" -type f -delete 2>/dev/null
+    echo "  mac80211 stamps cleared"
+else
+    echo "  WARNING: Patch file not found at $PATCH_SRC"
+fi
+
+# ============================================================
 # 直接替换 BDF（进 squashfs，开机即 29dBm）
 # ============================================================
 echo ">>> Setting up direct BDF replacement..."
