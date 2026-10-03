@@ -1,5 +1,5 @@
 # ============================================================
-# GENERAL.txt - Redmi AX6 轻量化（dae + NSS + UPnP + 调试工具）
+# GENERAL.txt - Redmi AX6 轻量化（dae + NSS + UPnP + iperf3）
 # ============================================================
 
 # ---------- 科学插件 ----------
@@ -30,7 +30,7 @@ CONFIG_PACKAGE_ATH11K_NSS_SUPPORT=y
 CONFIG_NSS_FIRMWARE_VERSION_12_5=y
 CONFIG_PACKAGE_ipq-wifi-redmi_ax6=y
 
-# ---------- 关键：禁用所有软件 Offload，避免与 NSS 冲突 ----------
+# ---------- 关键：禁用软件 Offload，避免与 NSS 冲突 ----------
 CONFIG_PACKAGE_kmod-nft-offload=n
 CONFIG_PACKAGE_kmod-nf-flow=n
 
@@ -56,17 +56,12 @@ CONFIG_PACKAGE_kmod-nf-conntrack=y
 CONFIG_PACKAGE_kmod-nf-conntrack6=y
 CONFIG_PACKAGE_kmod-nf-nat=y
 
-# ---------- 调试工具（保留） ----------
-CONFIG_PACKAGE_htop=y
+# ---------- ZRAM（内存压缩交换） ----------
+CONFIG_PACKAGE_kmod-zram=y
+CONFIG_PACKAGE_zram-swap=y
+
+# ---------- 调试工具（只留 iperf3） ----------
 CONFIG_PACKAGE_iperf3=y
-CONFIG_PACKAGE_tcpdump=y
-CONFIG_PACKAGE_bind-dig=y
-CONFIG_PACKAGE_ip-full=y
-CONFIG_PACKAGE_curl=y
-CONFIG_PACKAGE_dmesg=y
-CONFIG_PACKAGE_openssh-keygen=y
-CONFIG_PACKAGE_openssh-sftp-server=y
-CONFIG_PACKAGE_openssl-util=y
 
 # ---------- LuCI 基础与中文 ----------
 CONFIG_PACKAGE_luci=y
@@ -98,31 +93,40 @@ CONFIG_PACKAGE_luci-app-ddns-go=n
 CONFIG_PACKAGE_luci-proto-wireguard=n
 CONFIG_PACKAGE_luci-app-zerotier=n
 CONFIG_PACKAGE_luci-app-vlmcsd=n
-CONFIG_PACKAGE_luci-app-ttyd=y
+CONFIG_PACKAGE_luci-app-ttyd=n
 CONFIG_PACKAGE_luci-app-cpufreq=n
 CONFIG_PACKAGE_luci-app-nginx-manager=n
 CONFIG_PACKAGE_luci-proto-relay=n
 
-# ---------- 已关闭的工具 ----------
-CONFIG_PACKAGE_autocore=y
+# ---------- 已关闭的工具（只留 iperf3） ----------
+CONFIG_PACKAGE_autocore=n
 CONFIG_PACKAGE_coremark=n
 CONFIG_PACKAGE_cpufreq=n
 CONFIG_PACKAGE_btop=n
+CONFIG_PACKAGE_htop=n
 CONFIG_PACKAGE_bash=n
+CONFIG_PACKAGE_tcpdump=n
+CONFIG_PACKAGE_bind-dig=n
 CONFIG_PACKAGE_bind-nslookup=n
+CONFIG_PACKAGE_ip-full=n
+CONFIG_PACKAGE_curl=n
+CONFIG_PACKAGE_dmesg=n
+CONFIG_PACKAGE_openssh-keygen=n
+CONFIG_PACKAGE_openssh-sftp-server=n
+CONFIG_PACKAGE_openssl-util=n
 CONFIG_PACKAGE_xz-utils=n
-CONFIG_PACKAGE_v2ray-geodata-updater=y
+CONFIG_PACKAGE_v2ray-geodata-updater=n
 
 # ---------- 已关闭的内核模块 ----------
 CONFIG_PACKAGE_kmod-bonding=n
 CONFIG_PACKAGE_proto-bonding=n
 CONFIG_PACKAGE_kmod-dsa=n
-CONFIG_PACKAGE_kmod-dummy=y
+CONFIG_PACKAGE_kmod-dummy=n
 CONFIG_PACKAGE_kmod-inet-mptcp-diag=n
-CONFIG_PACKAGE_kmod-mtd-rw=y
+CONFIG_PACKAGE_kmod-mtd-rw=n
 CONFIG_PACKAGE_kmod-ovpn-backports=n
 CONFIG_PACKAGE_kmod-wireguard=n
-CONFIG_PACKAGE_kmod-nf-nat6=y
+CONFIG_PACKAGE_kmod-nf-nat6=n
 CONFIG_PACKAGE_kmod-nft-arp=n
 CONFIG_PACKAGE_kmod-nft-bridge=n
 CONFIG_PACKAGE_kmod-nft-connlimit=n
