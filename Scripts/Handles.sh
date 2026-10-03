@@ -111,7 +111,7 @@ if [ -f "$CONFIG_FILE" ]; then
 fi
 
 # ============================================================
-# 直接替换 BDF（进 squashfs，开机即 29dBm，不依赖脚本）
+# 直接替换 BDF（进 squashfs，开机即 29dBm）
 # ============================================================
 echo ">>> Setting up direct BDF replacement..."
 
@@ -125,29 +125,55 @@ fi
 echo "  BDF source MD5:"
 md5sum "$BDF_SRC"
 
-# 1. 把 BDF 放到 base-files 里的驱动路径（编译后进 squashfs）
+# 1. 把 BDF 放进 base-files 的驱动路径
 BASE_FW_DIR="$WRT_ROOT/package/base-files/files/lib/firmware/ath11k/IPQ8074/hw2.0"
 mkdir -p "$BASE_FW_DIR"
 cp "$BDF_SRC" "$BASE_FW_DIR/board-2.bin"
 echo "  [1/2] Placed in base-files: $BASE_FW_DIR/board-2.bin"
 md5sum "$BASE_FW_DIR/board-2.bin"
 
-# 2. 修改 ipq-wifi 宏，让它不装 board-2.bin（避免覆盖）
+# 2. 禁用 ipq-wifi 的 BDF 安装
 IPQ_WIFI_MK="$WRT_ROOT/package/firmware/ipq-wifi/Makefile"
 if [ -f "$IPQ_WIFI_MK" ]; then
     sed -i 's|\$(INSTALL_DATA) \$(1) \$(2)/lib/firmware/ath11k/\$(3)/board-2.bin|true|' "$IPQ_WIFI_MK"
     sed -i 's/^PKG_MIRROR_HASH:=.*/PKG_MIRROR_HASH:=skip/' "$IPQ_WIFI_MK"
     echo "  [2/2] Disabled ipq-wifi BDF install"
-    echo "  ===== Check macro ====="
-    grep -A2 "define ipq-wifi-install-ath11-one-to" "$IPQ_WIFI_MK"
-    echo "  ===== End ====="
 fi
 
-# 3. 清 base-files / ipq-wifi / ath11k-firmware 的 stamp，强制重新安装
-echo ">>> Clearing stamps..."
+# 清 stamp，强制重新安装
 find "$WRT_ROOT/staging_dir" -name ".base-files*" -type f -delete 2>/dev/null
 find "$WRT_ROOT/staging_dir" -name ".ipq-wifi*" -type f -delete 2>/dev/null
-find "$WRT_ROOT/staging_dir" -name ".ath11k-firmware*" -type f -delete 2>/dev/null
 echo "  Stamps cleared"
+
+# ============================================================
+# 内存优化 sysctl 配置（首次启动自动生效）
+# ============================================================
+echo ">>> Adding memory optimization sysctl..."
+
+BASE_FILES_DIR="$WRT_ROOT/package/base-files/files"
+mkdir -p "$BASE_FILES_DIR/etc/sysctl.d"
+
+cat > "$BASE_FILES_DIR/etc/sysctl.d/99-memory-optimize.conf" << 'SYSCTLEOF'
+# conntrack 表（默认 65536，改小到 16384 省内存）
+net.netfilter.nf_conntrack_max=16384
+
+# 加快 conntrack 超时回收
+net.netfilter.nf_conntrack_tcp_timeout_established=600
+net.netfilter.nf_conntrack_tcp_timeout_time_wait=30
+net.netfilter.nf_conntrack_udp_timeout=30
+
+# 减小网络缓冲
+net.core.rmem_max=262144
+net.core.wmem_max=262144
+net.core.rmem_default=65536
+net.core.wmem_default=65536
+net.core.netdev_max_backlog=2048
+
+# TCP 内存限制
+net.ipv4.tcp_rmem=4096 131072 262144
+net.ipv4.tcp_wmem=4096 65536 262144
+SYSCTLEOF
+
+echo "  sysctl config added"
 
 echo ">>> Handles.sh done"
