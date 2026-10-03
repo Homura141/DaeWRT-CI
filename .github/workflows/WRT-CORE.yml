@@ -194,15 +194,12 @@ jobs:
           make download -j$(nproc)
 
       # ============================================================
-      # 关键步骤：MD5 校验 + staging_dir 替换 + hostapd 补丁
-      # 位置：make download 之后、make 之前
+      # 编译前关键步骤：MD5 校验 + staging_dir 替换 + hostapd 补丁
       # ============================================================
       - name: Override BDF Before Compile
         if: env.WRT_TEST != 'true'
         run: |
-          # ============================================================
           # 1. BDF MD5 校验
-          # ============================================================
           EXPECTED_MD5="9b04d4a7e5ce6391b899a6f61526366b"
 
           BDF_SRC="$GITHUB_WORKSPACE/files/board-2.bin"
@@ -226,9 +223,7 @@ jobs:
           fi
           echo "BDF MD5 check passed."
 
-          # ============================================================
-          # 2. 直接替换 staging_dir 里已安装的 board-2.bin（关键！）
-          # ============================================================
+          # 2. 直接替换 staging_dir 里已安装的 board-2.bin
           echo ">>> Replacing board-2.bin in staging_dir..."
           find ./wrt/staging_dir -path "*ath11k/IPQ8074*" -name "board-2.bin" 2>/dev/null | while read f; do
             cp "$BDF_SRC" "$f"
@@ -236,38 +231,29 @@ jobs:
             md5sum "$f"
           done
 
-          # 同时替换 /lib/firmware/IPQ8074/（ath11k-firmware 装的）
           find ./wrt/staging_dir -path "*/IPQ8074/board-2.bin" 2>/dev/null | while read f; do
             cp "$BDF_SRC" "$f"
             echo "  Replaced: $f"
           done
 
-          # ============================================================
-          # 3. 清掉所有 ipq-wifi / ath11k-firmware 相关的 stamp
-          # ============================================================
+          # 3. 清 stamp
           echo ">>> Clearing ipq-wifi stamps..."
           find ./wrt/staging_dir -name ".ipq-wifi*" -type f -delete 2>/dev/null
           find ./wrt/staging_dir -name ".ath11k-firmware*" -type f -delete 2>/dev/null
-          echo "  Stamps cleared"
 
-          # ============================================================
           # 4. 删 build_dir 里的 ipq-wifi 旧目录
-          # ============================================================
-          echo ">>> Removing build_dir ipq-wifi..."
           find ./wrt/build_dir -maxdepth 2 -type d -name "ipq-wifi-*" 2>/dev/null | while read d; do
             rm -rf "$d"
             echo "  Removed: $d"
           done
 
-          # ============================================================
-          # 5. hostapd 补丁（此时源码已下载）
-          # ============================================================
+          # 5. hostapd 补丁
           HOSTAPD_SRC="./wrt/package/network/services/hostapd/src/ap/hostapd.c"
           if [ -f "$HOSTAPD_SRC" ]; then
             sed -i 's/hapd->iface->conf->he_mu_edca.he_qos_info &= 0xfff0;/\/\* & \*\//' "$HOSTAPD_SRC"
             echo "hostapd.c patched"
           else
-            echo "WARNING: hostapd.c not found at $HOSTAPD_SRC"
+            echo "WARNING: hostapd.c not found"
           fi
 
           echo "Override done"
