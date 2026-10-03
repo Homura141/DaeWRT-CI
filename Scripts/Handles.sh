@@ -81,9 +81,10 @@ if [ -f "$RUST_FILE" ]; then
 fi
 
 # ============================================================
-# dae 所需的内核 eBPF/BTF 选项 + hostapd 编译错误修复
+# dae 所需的内核 eBPF/BTF 选项（用 sed 直接改 config 文件）
+# 注意：hostapd 补丁已移到 WRT-CORE.yml 的 Override 步骤
 # ============================================================
-echo ">>> Applying dae kernel options and hostapd fix..."
+echo ">>> Applying dae kernel eBPF/BTF options..."
 WRT_ROOT="$GITHUB_WORKSPACE/$WRT_DIR"
 if [ -d "$WRT_ROOT" ]; then
     (
@@ -91,29 +92,17 @@ if [ -d "$WRT_ROOT" ]; then
 
         TARGET_CONFIG=$(find target/linux/qualcommax -maxdepth 1 -name "config-*" | head -1)
         if [ -n "$TARGET_CONFIG" ]; then
-            scripts/config --file "$TARGET_CONFIG" \
-                --enable BPF_SYSCALL \
-                --enable BPF_JIT \
-                --enable DEBUG_INFO_BTF \
-                --enable BPF_EVENTS \
-                --enable CGROUP_BPF \
-                --enable NET_CLS_BPF \
-                --enable NET_SCH_INGRESS \
-                --enable KALLSYMS \
-                --enable KALLSYMS_ALL \
-                --enable TCP_CONG_BBR \
-                --enable NET_SCH_FQ
-            echo "eBPF/BTF options enabled in $TARGET_CONFIG"
+            for opt in BPF_SYSCALL BPF_JIT DEBUG_INFO_BTF BPF_EVENTS CGROUP_BPF NET_CLS_BPF NET_SCH_INGRESS KALLSYMS KALLSYMS_ALL TCP_CONG_BBR NET_SCH_FQ; do
+                sed -i "s/^CONFIG_${opt}=m/CONFIG_${opt}=y/" "$TARGET_CONFIG"
+                sed -i "s/^# CONFIG_${opt} is not set/CONFIG_${opt}=y/" "$TARGET_CONFIG"
+                grep -q "^CONFIG_${opt}=" "$TARGET_CONFIG" || echo "CONFIG_${opt}=y" >> "$TARGET_CONFIG"
+            done
+            echo "eBPF/BTF options forced in $TARGET_CONFIG"
+            echo "===== Check ====="
+            grep -E "CONFIG_BPF_SYSCALL|CONFIG_DEBUG_INFO_BTF|CONFIG_TCP_CONG_BBR|CONFIG_NET_SCH_FQ" "$TARGET_CONFIG"
+            echo "===== End ====="
         else
             echo "WARNING: qualcommax target config not found"
-        fi
-
-        HOSTAPD_SRC="package/network/services/hostapd/src/ap/hostapd.c"
-        if [ -f "$HOSTAPD_SRC" ]; then
-            sed -i 's/hapd->iface->conf->he_mu_edca.he_qos_info &= 0xfff0;/\/\* & \*\//' "$HOSTAPD_SRC"
-            echo "hostapd.c patched"
-        else
-            echo "WARNING: hostapd.c not found at $HOSTAPD_SRC"
         fi
     )
 else
@@ -163,7 +152,7 @@ IPQ_WIFI_DIR="$WRT_ROOT/package/firmware/ipq-wifi"
 IPQ_WIFI_MK="$IPQ_WIFI_DIR/Makefile"
 
 if [ -d "$IPQ_WIFI_DIR" ]; then
-    # 保险 1：把 BDF 放进源码树里的 files/ 目录（编译时会自动 cp 到 PKG_BUILD_DIR）
+    # 保险 1：把 BDF 放进源码树里的 files/ 目录
     mkdir -p "$IPQ_WIFI_DIR/files"
     cp "$BDF_SRC" "$IPQ_WIFI_DIR/files/board-redmi_ax6.ipq8074"
     echo "  [1/3] Placed into ipq-wifi/files/"
@@ -178,7 +167,7 @@ if [ -d "$IPQ_WIFI_DIR" ]; then
         echo "  [2/3] Removed: $d"
     done
 
-    # 保险 4：删掉 hosts 里的旧包（防止 hash 缓存）
+    # 保险 4：清 stamp 文件
     rm -rf "$WRT_ROOT/staging_dir/hostpkg/stamp/.ipq-wifi_installed" 2>/dev/null
     rm -rf "$WRT_ROOT/staging_dir/target-aarch64_cortex-a53_musl/stamp/.ipq-wifi_installed" 2>/dev/null
     echo "  [3/3] Cleared stamp files"
