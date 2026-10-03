@@ -194,13 +194,14 @@ jobs:
           make download -j$(nproc)
 
       # ============================================================
-      # 关键步骤：校验 BDF MD5 + 修改 ipq-wifi Makefile
+      # 关键步骤：MD5 校验 + staging_dir 替换 + hostapd 补丁
+      # 位置：make download 之后、make 之前
       # ============================================================
-      - name: Override BDF in ipq-wifi Makefile
+      - name: Override BDF Before Compile
         if: env.WRT_TEST != 'true'
         run: |
           # ============================================================
-          # BDF MD5 校验（不匹配直接中止编译）
+          # 1. BDF MD5 校验
           # ============================================================
           EXPECTED_MD5="9b04d4a7e5ce6391b899a6f61526366b"
 
@@ -209,8 +210,6 @@ jobs:
 
           if [ ! -f "$BDF_SRC" ]; then
             echo "ERROR: BDF source not found!"
-            echo "  Tried: $GITHUB_WORKSPACE/files/board-2.bin"
-            echo "  Tried: $GITHUB_WORKSPACE/files/board-redmi_ax6.ipq8074"
             exit 1
           fi
 
@@ -223,34 +222,53 @@ jobs:
 
           if [ "$ACTUAL_MD5" != "$EXPECTED_MD5" ]; then
             echo "ERROR: BDF MD5 mismatch! Aborting compile."
-            echo "  Please check your files/board-2.bin and try again."
             exit 1
           fi
-
           echo "BDF MD5 check passed."
 
           # ============================================================
-          # 修改 ipq-wifi Makefile，让它用我们的高功率 BDF
+          # 2. 直接替换 staging_dir 里已安装的 board-2.bin（关键！）
           # ============================================================
-          WRT_ROOT="$GITHUB_WORKSPACE/wrt"
-          IPQ_WIFI_MK="$WRT_ROOT/package/firmware/ipq-wifi/Makefile"
-          ATH11K_MK="$WRT_ROOT/package/firmware/ath11k-firmware/Makefile"
+          echo ">>> Replacing board-2.bin in staging_dir..."
+          find ./wrt/staging_dir -path "*ath11k/IPQ8074*" -name "board-2.bin" 2>/dev/null | while read f; do
+            cp "$BDF_SRC" "$f"
+            echo "  Replaced: $f"
+            md5sum "$f"
+          done
 
-          if [ ! -f "$IPQ_WIFI_MK" ]; then
-            echo "ERROR: $IPQ_WIFI_MK not found"
-            exit 1
+          # 同时替换 /lib/firmware/IPQ8074/（ath11k-firmware 装的）
+          find ./wrt/staging_dir -path "*/IPQ8074/board-2.bin" 2>/dev/null | while read f; do
+            cp "$BDF_SRC" "$f"
+            echo "  Replaced: $f"
+          done
+
+          # ============================================================
+          # 3. 清掉所有 ipq-wifi / ath11k-firmware 相关的 stamp
+          # ============================================================
+          echo ">>> Clearing ipq-wifi stamps..."
+          find ./wrt/staging_dir -name ".ipq-wifi*" -type f -delete 2>/dev/null
+          find ./wrt/staging_dir -name ".ath11k-firmware*" -type f -delete 2>/dev/null
+          echo "  Stamps cleared"
+
+          # ============================================================
+          # 4. 删 build_dir 里的 ipq-wifi 旧目录
+          # ============================================================
+          echo ">>> Removing build_dir ipq-wifi..."
+          find ./wrt/build_dir -maxdepth 2 -type d -name "ipq-wifi-*" 2>/dev/null | while read d; do
+            rm -rf "$d"
+            echo "  Removed: $d"
+          done
+
+          # ============================================================
+          # 5. hostapd 补丁（此时源码已下载）
+          # ============================================================
+          HOSTAPD_SRC="./wrt/package/network/services/hostapd/src/ap/hostapd.c"
+          if [ -f "$HOSTAPD_SRC" ]; then
+            sed -i 's/hapd->iface->conf->he_mu_edca.he_qos_info &= 0xfff0;/\/\* & \*\//' "$HOSTAPD_SRC"
+            echo "hostapd.c patched"
+          else
+            echo "WARNING: hostapd.c not found at $HOSTAPD_SRC"
           fi
-
-          # 1. 跳过 tar 快照校验
-          sed -i 's/^PKG_MIRROR_HASH:=.*/PKG_MIRROR_HASH:=skip/' "$IPQ_WIFI_MK"
-          [ -f "$ATH11K_MK" ] && sed -i 's/^PKG_MIRROR_HASH:=.*/PKG_MIRROR_HASH:=skip/' "$ATH11K_MK"
-
-          # 2. 在 ipq-wifi Makefile 末尾追加 Build/Compile 覆盖定义
-          printf '\n# Override Build/Compile to use high-power BDF\ndefine Build/Compile\n\t$(CP) $(TOPDIR)/../files/board-2.bin $(PKG_BUILD_DIR)/board-redmi_ax6.ipq8074\nendef\n' >> "$IPQ_WIFI_MK"
-
-          echo "===== Tail of ipq-wifi Makefile (Tab shown as ^I) ====="
-          tail -8 "$IPQ_WIFI_MK" | cat -A
-          echo "===== End ====="
 
           echo "Override done"
 
