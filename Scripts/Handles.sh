@@ -135,7 +135,7 @@ if [ -f "$APK_MK" ]; then
 fi
 
 # ============================================================
-# 强制禁用 daed，只保留 dae
+# 强制禁用 daed
 # ============================================================
 echo ">>> Disabling luci-app-daed..."
 CONFIG_FILE="$GITHUB_WORKSPACE/$WRT_DIR/.config"
@@ -145,23 +145,43 @@ if [ -f "$CONFIG_FILE" ]; then
 fi
 
 # ============================================================
-# 编译前替换 ipq-wifi 源文件（利用 OpenWrt files/ 覆盖机制）
+# 替换 ipq-wifi 的 BDF：三重保险
 # ============================================================
-echo ">>> Placing high-power BDF into ipq-wifi files/ ..."
+echo ">>> Replacing ipq-wifi BDF..."
+
+BDF_SRC="$GITHUB_WORKSPACE/files/board-2.bin"
+[ -f "$BDF_SRC" ] || BDF_SRC="$GITHUB_WORKSPACE/files/board-redmi_ax6.ipq8074"
+
+if [ ! -f "$BDF_SRC" ]; then
+    echo "ERROR: BDF source not found"
+    exit 1
+fi
+echo "  BDF source: $BDF_SRC"
+md5sum "$BDF_SRC"
 
 IPQ_WIFI_DIR="$WRT_ROOT/package/firmware/ipq-wifi"
+IPQ_WIFI_MK="$IPQ_WIFI_DIR/Makefile"
 
 if [ -d "$IPQ_WIFI_DIR" ]; then
+    # 保险 1：把 BDF 放进源码树里的 files/ 目录（编译时会自动 cp 到 PKG_BUILD_DIR）
     mkdir -p "$IPQ_WIFI_DIR/files"
-    if [ -f "$GITHUB_WORKSPACE/files/board-2.bin" ]; then
-        cp "$GITHUB_WORKSPACE/files/board-2.bin" "$IPQ_WIFI_DIR/files/board-redmi_ax6.ipq8074"
-        echo "  Placed BDF into ipq-wifi/files/"
-        md5sum "$IPQ_WIFI_DIR/files/board-redmi_ax6.ipq8074"
-    else
-        echo "  WARNING: files/board-2.bin not found"
-    fi
+    cp "$BDF_SRC" "$IPQ_WIFI_DIR/files/board-redmi_ax6.ipq8074"
+    echo "  [1/3] Placed into ipq-wifi/files/"
+    md5sum "$IPQ_WIFI_DIR/files/board-redmi_ax6.ipq8074"
 
-    sed -i 's/^PKG_MIRROR_HASH:=.*/PKG_MIRROR_HASH:=skip/' "$IPQ_WIFI_DIR/Makefile"
+    # 保险 2：跳过 tar 快照校验
+    sed -i 's/^PKG_MIRROR_HASH:=.*/PKG_MIRROR_HASH:=skip/' "$IPQ_WIFI_MK"
+
+    # 保险 3：删掉 build_dir 里旧的 ipq-wifi 目录
+    find "$WRT_ROOT/build_dir" -maxdepth 2 -type d -name "ipq-wifi-*" 2>/dev/null | while read d; do
+        rm -rf "$d"
+        echo "  [2/3] Removed: $d"
+    done
+
+    # 保险 4：删掉 hosts 里的旧包（防止 hash 缓存）
+    rm -rf "$WRT_ROOT/staging_dir/hostpkg/stamp/.ipq-wifi_installed" 2>/dev/null
+    rm -rf "$WRT_ROOT/staging_dir/target-aarch64_cortex-a53_musl/stamp/.ipq-wifi_installed" 2>/dev/null
+    echo "  [3/3] Cleared stamp files"
 else
     echo "  WARNING: $IPQ_WIFI_DIR not found"
 fi
