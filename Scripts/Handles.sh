@@ -81,38 +81,17 @@ if [ -f "$RUST_FILE" ]; then
 fi
 
 # ============================================================
-# dae 所需的内核 eBPF/BTF 选项（用 sed 直接改 config 文件）
-# 注意：hostapd 补丁已移到 WRT-CORE.yml 的 Override 步骤
+# 注意：eBPF/BTF/B groom 内核选项已移到 Config/IPQ807X-WIFI.txt
+# 那里用 CONFIG_KERNEL_* 格式，OpenWrt 自动映射到内核 config
+# 这里不再用 sed 改 config-6.18，避免 choice 冲突
 # ============================================================
-echo ">>> Applying dae kernel eBPF/BTF options..."
-WRT_ROOT="$GITHUB_WORKSPACE/$WRT_DIR"
-if [ -d "$WRT_ROOT" ]; then
-    (
-        cd "$WRT_ROOT" || exit 1
-
-        TARGET_CONFIG=$(find target/linux/qualcommax -maxdepth 1 -name "config-*" | head -1)
-        if [ -n "$TARGET_CONFIG" ]; then
-            for opt in BPF_SYSCALL BPF_JIT DEBUG_INFO_BTF BPF_EVENTS CGROUP_BPF NET_CLS_BPF NET_SCH_INGRESS KALLSYMS KALLSYMS_ALL TCP_CONG_BBR NET_SCH_FQ; do
-                sed -i "s/^CONFIG_${opt}=m/CONFIG_${opt}=y/" "$TARGET_CONFIG"
-                sed -i "s/^# CONFIG_${opt} is not set/CONFIG_${opt}=y/" "$TARGET_CONFIG"
-                grep -q "^CONFIG_${opt}=" "$TARGET_CONFIG" || echo "CONFIG_${opt}=y" >> "$TARGET_CONFIG"
-            done
-            echo "eBPF/BTF options forced in $TARGET_CONFIG"
-            echo "===== Check ====="
-            grep -E "CONFIG_BPF_SYSCALL|CONFIG_DEBUG_INFO_BTF|CONFIG_TCP_CONG_BBR|CONFIG_NET_SCH_FQ" "$TARGET_CONFIG"
-            echo "===== End ====="
-        else
-            echo "WARNING: qualcommax target config not found"
-        fi
-    )
-else
-    echo "WARNING: source directory not found at $WRT_ROOT"
-fi
+echo ">>> Kernel options are set in Config/IPQ807X-WIFI.txt"
 
 # ============================================================
 # 修复 apk 包下载
 # ============================================================
 echo ">>> Fixing apk package download..."
+WRT_ROOT="$GITHUB_WORKSPACE/$WRT_DIR"
 APK_MK="$WRT_ROOT/package/system/apk/Makefile"
 if [ -f "$APK_MK" ]; then
     sed -i 's|https://gitlab.alpinelinux.org/alpine/apk-tools.git|https://github.com/alpinelinux/apk-tools.git|' "$APK_MK"
