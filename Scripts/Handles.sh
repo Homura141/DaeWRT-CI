@@ -81,9 +81,7 @@ if [ -f "$RUST_FILE" ]; then
 fi
 
 # ============================================================
-# 注意：eBPF/BTF/B groom 内核选项已移到 Config/IPQ807X-WIFI.txt
-# 那里用 CONFIG_KERNEL_* 格式，OpenWrt 自动映射到内核 config
-# 这里不再用 sed 改 config-6.18，避免 choice 冲突
+# 注意：内核 eBPF/BTF 选项已移到 Config/IPQ807X-WIFI.txt
 # ============================================================
 echo ">>> Kernel options are set in Config/IPQ807X-WIFI.txt"
 
@@ -113,7 +111,7 @@ if [ -f "$CONFIG_FILE" ]; then
 fi
 
 # ============================================================
-# 替换 ipq-wifi 的 BDF：三重保险
+# 替换 ipq-wifi 的 BDF
 # ============================================================
 echo ">>> Replacing ipq-wifi BDF..."
 
@@ -128,28 +126,19 @@ echo "  BDF source: $BDF_SRC"
 md5sum "$BDF_SRC"
 
 IPQ_WIFI_DIR="$WRT_ROOT/package/firmware/ipq-wifi"
-IPQ_WIFI_MK="$IPQ_WIFI_DIR/Makefile"
 
 if [ -d "$IPQ_WIFI_DIR" ]; then
-    # 保险 1：把 BDF 放进源码树里的 files/ 目录
+    # 把 BDF 放进源码树里的 files/ 目录
     mkdir -p "$IPQ_WIFI_DIR/files"
     cp "$BDF_SRC" "$IPQ_WIFI_DIR/files/board-redmi_ax6.ipq8074"
-    echo "  [1/3] Placed into ipq-wifi/files/"
+    echo "  [1/2] Placed into ipq-wifi/files/"
     md5sum "$IPQ_WIFI_DIR/files/board-redmi_ax6.ipq8074"
 
-    # 保险 2：跳过 tar 快照校验
-    sed -i 's/^PKG_MIRROR_HASH:=.*/PKG_MIRROR_HASH:=skip/' "$IPQ_WIFI_MK"
-
-    # 保险 3：删掉 build_dir 里旧的 ipq-wifi 目录
+    # 删掉 build_dir 里旧的 ipq-wifi 目录
     find "$WRT_ROOT/build_dir" -maxdepth 2 -type d -name "ipq-wifi-*" 2>/dev/null | while read d; do
         rm -rf "$d"
-        echo "  [2/3] Removed: $d"
+        echo "  [2/2] Removed: $d"
     done
-
-    # 保险 4：清 stamp 文件
-    rm -rf "$WRT_ROOT/staging_dir/hostpkg/stamp/.ipq-wifi_installed" 2>/dev/null
-    rm -rf "$WRT_ROOT/staging_dir/target-aarch64_cortex-a53_musl/stamp/.ipq-wifi_installed" 2>/dev/null
-    echo "  [3/3] Cleared stamp files"
 else
     echo "  WARNING: $IPQ_WIFI_DIR not found"
 fi
