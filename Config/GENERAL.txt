@@ -6,8 +6,8 @@
 CONFIG_PACKAGE_luci-app-dae=y
 
 # ---------- 插件（只留 UPnP） ----------
-CONFIG_PACKAGE_luci-app-upnp=y
-CONFIG_PACKAGE_miniupnpd-nftables=y
+CONFIG_PACKAGE_luci-app-upnp=n
+CONFIG_PACKAGE_miniupnpd-nftables=n
 
 # ---------- 删除插件 ----------
 CONFIG_PACKAGE_luci-app-attendedsysupgrade=n
